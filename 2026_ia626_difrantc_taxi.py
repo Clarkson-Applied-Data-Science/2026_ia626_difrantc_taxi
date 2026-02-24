@@ -1,4 +1,5 @@
 import csv
+import matplotlib.pyplot as plt 
 import math
 import collections
 import datetime
@@ -24,10 +25,11 @@ min_dropoff_lon = float('inf'); max_dropoff_lon = float('-inf')
 
 total_distance = 0
 valid_distance_count = 0
+trip_distances = []
 
 passengers_by_hour = collections.defaultdict(list)
 distinct_values = collections.defaultdict(set)
-DISTINCT_FIELDS = ['vendor_id', 'rate_code', 'store_and_fwd_flag', 'payment_type']
+DISTINCT_FIELDS = ['vendor_id', 'rate_code', 'store_and_fwd_flag']
 
 numeric_fields = ['passenger_count', 'trip_time_in_secs', 'trip_distance']
 numeric_min = {f: float('inf') for f in numeric_fields}
@@ -58,10 +60,7 @@ with open(FILENAME, 'r') as f:
                 min_datetime = dt
             if max_datetime is None or dt > max_datetime:
                 max_datetime = dt
-            try:
-                passengers_by_hour[dt.hour].append(int(row['passenger_count']))
-            except:
-                pass
+            passengers_by_hour[dt.hour].append(int(row['passenger_count']))
         except:
             pass
 
@@ -71,13 +70,13 @@ with open(FILENAME, 'r') as f:
             dlat = float(row['dropoff_latitude'])
             dlon = float(row['dropoff_longitude'])
 
-            if plat != 0 and plon != 0:
+            if plat != 0 and plon != 0 and 40 < plat < 42 and -75 < plon < -72:
                 min_pickup_lat = min(min_pickup_lat, plat)
                 max_pickup_lat = max(max_pickup_lat, plat)
                 min_pickup_lon = min(min_pickup_lon, plon)
                 max_pickup_lon = max(max_pickup_lon, plon)
 
-            if dlat != 0 and dlon != 0:
+            if dlat != 0 and dlon != 0 and 40 < dlat < 42 and -75 < dlon < -72:
                 min_dropoff_lat = min(min_dropoff_lat, dlat)
                 max_dropoff_lat = max(max_dropoff_lat, dlat)
                 min_dropoff_lon = min(min_dropoff_lon, dlon)
@@ -87,6 +86,7 @@ with open(FILENAME, 'r') as f:
                 dist = haversine(plat, plon, dlat, dlon)
                 total_distance += dist
                 valid_distance_count += 1
+                trip_distances.append(dist)
         except:
             pass
 
@@ -131,12 +131,36 @@ for field in numeric_fields:
 
 print(f"\nQ9: Average Passengers by Hour (Full Dataset)")
 print(f"{'Hour':<6} {'Avg Passengers':<15} {'Count'}")
-for hour in range(24):
+
+hours_full = list(range(24))
+avgs_full = []
+for hour in hours_full:
     vals = passengers_by_hour[hour]
+    avg = sum(vals)/len(vals) if vals else 0
+    avgs_full.append(avg)
     if vals:
-        avg = sum(vals) / len(vals)
         bar = '#' * int(avg * 10)
         print(f"  {hour:02d}:00  {avg:.4f}          {len(vals)}   {bar}")
+
+plt.figure(figsize=(10, 6))
+plt.bar(hours_full, avgs_full, color='steelblue')
+plt.title("Q9: Average Passengers by Hour (Full Dataset)")
+plt.xlabel("Hour of Day")
+plt.ylabel("Average Passenger Count")
+plt.xticks(range(24))
+plt.ylim(1.5, 2.0)
+plt.grid(True)
+plt.savefig("Q9histogram.png")
+plt.show()
+
+plt.figure(figsize=(10, 6))
+plt.hist([d for d in trip_distances if d <= 50], bins=50)
+plt.title("Q6: Histogram of NYC Trip Distances (Miles)")
+plt.xlabel("Trip Distance (miles)")
+plt.ylabel("Frequency")
+plt.grid(True)
+plt.savefig("Q6_histogram.png")
+plt.show()
 
 print(f"\nQ10: Writing reduced CSV (1 in every 1000 rows)")
 with open('trip_data_reduced.csv', 'w', newline='') as f:
@@ -157,40 +181,20 @@ with open('trip_data_reduced.csv', 'r') as f:
         except:
             pass
 
-print(f"\nQ11: Average Passengers by Hour (Reduced Dataset - 1 in 1000 rows)")
-print(f"{'Hour':<6} {'Avg Passengers':<15} {'Count'}")
-for hour in range(24):
+hours = list(range(24))
+averages = []
+for hour in hours:
     vals = passengers_by_hour_reduced[hour]
-    if vals:
-        avg = sum(vals) / len(vals)
-        bar = '#' * int(avg * 10)
-        print(f"  {hour:02d}:00  {avg:.4f}          {len(vals)}   {bar}")
+    averages.append(sum(vals)/len(vals) if vals else 0)
 
-print(f"\nQ6: Trip Distance Histogram")
-bins = [0, 1, 2, 5, 10, 20, 50, float('inf')]
-bin_labels = ['0-1', '1-2', '2-5', '5-10', '10-20', '20-50', '50+']
-bin_counts = [0] * len(bin_labels)
-
-with open(FILENAME, 'r') as f:
-    reader = csv.DictReader(f)
-    reader.fieldnames = [field.strip() for field in reader.fieldnames]
-    for row in reader:
-        try:
-            plat = float(row['pickup_latitude'])
-            plon = float(row['pickup_longitude'])
-            dlat = float(row['dropoff_latitude'])
-            dlon = float(row['dropoff_longitude'])
-            if plat != 0 and plon != 0 and dlat != 0 and dlon != 0:
-                dist = haversine(plat, plon, dlat, dlon)
-                for i in range(len(bins) - 1):
-                    if bins[i] <= dist < bins[i+1]:
-                        bin_counts[i] += 1
-                        break
-        except:
-            pass
-
-print(f"{'Range (mi)':<12} {'Count':<10} Bar")
-max_count = max(bin_counts) if bin_counts else 1
-for label, count in zip(bin_labels, bin_counts):
-    bar = '#' * int((count / max_count) * 40)
-    print(f"  {label:<10} {count:<10} {bar}")
+plt.figure(figsize=(10, 6))
+plt.plot(hours, averages, label='Reduced Dataset (15,285 rows)', color='orange')
+plt.plot(hours_full, avgs_full, label='Full Dataset (15,285,049 rows)', color='steelblue')
+plt.title("Q11: Average Passengers by Hour - Full vs Reduced Dataset")
+plt.xlabel("Hour of Day")
+plt.ylabel("Average Passenger Count")
+plt.xticks(range(24))
+plt.legend()
+plt.grid(True)
+plt.savefig("Q11_average_passengers.png")
+plt.show()
